@@ -192,6 +192,7 @@ impl Dispatcher {
         } else if let Some(stream) = self.streams.borrow_mut().get_mut(&context_id) {
             self.active_id.set(context_id);
             stream.on_log()
+
         } else if let Some(root) = self.roots.borrow_mut().get_mut(&context_id) {
             self.active_id.set(context_id);
             root.on_log()

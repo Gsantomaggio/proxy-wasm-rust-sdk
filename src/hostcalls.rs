@@ -309,6 +309,9 @@ extern "C" {
     ) -> Status;
 }
 
+
+
+
 pub fn get_property(path: Vec<&str>) -> Result<Option<Bytes>, Status> {
     let serialized_path = utils::serialize_property_path(path);
     let mut return_data: *mut u8 = null_mut();
@@ -350,6 +353,31 @@ pub fn set_property(path: Vec<&str>, value: Option<&[u8]>) -> Result<(), Status>
     let serialized_path = utils::serialize_property_path(path);
     unsafe {
         match proxy_set_property(
+            serialized_path.as_ptr(),
+            serialized_path.len(),
+            value.map_or(null(), |value| value.as_ptr()),
+            value.map_or(0, |value| value.len()),
+        ) {
+            Status::Ok => Ok(()),
+            status => panic!("unexpected status: {}", status as u32),
+        }
+    }
+}
+
+
+extern "C" {
+    fn proxy_set_dynamicdata(
+        path_data: *const u8,
+        path_size: usize,
+        value_data: *const u8,
+        value_size: usize,
+    ) -> Status;
+}
+
+pub fn set_dynamicdata(path: Vec<&str>, value: Option<&[u8]>) -> Result<(), Status> {
+    let serialized_path = utils::serialize_property_path(path);
+    unsafe {
+        match proxy_set_dynamicdata(
             serialized_path.as_ptr(),
             serialized_path.len(),
             value.map_or(null(), |value| value.as_ptr()),

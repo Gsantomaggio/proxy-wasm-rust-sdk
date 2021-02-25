@@ -29,6 +29,10 @@ pub trait Context {
         hostcalls::set_property(path, value).unwrap()
     }
 
+    fn set_dynamicdata(&self, path: Vec<&str>, value: Option<&[u8]>) {
+        hostcalls::set_dynamicdata(path, value).unwrap()
+    }
+
     fn get_shared_data(&self, key: &str) -> (Option<Bytes>, Option<u32>) {
         hostcalls::get_shared_data(key).unwrap()
     }
