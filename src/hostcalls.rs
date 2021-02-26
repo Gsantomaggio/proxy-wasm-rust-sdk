@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::dispatcher;
-use crate::types::*;
 use std::ptr::{null, null_mut};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use crate::dispatcher;
+use crate::types::*;
 
 extern "C" {
     fn proxy_log(level: LogLevel, message_data: *const u8, message_size: usize) -> Status;
@@ -224,7 +225,7 @@ pub fn get_map_value(map_type: MapType, key: &str) -> Result<Option<String>, Sta
                             return_size,
                             return_size,
                         ))
-                        .unwrap(),
+                            .unwrap(),
                     ))
                 } else {
                     Ok(None)
@@ -742,68 +743,108 @@ pub fn increment_metric(metric_id: u32, offset: i64) -> Result<(), Status> {
     }
 }
 
-mod utils {
-    use crate::types::Bytes;
-    use std::convert::TryFrom;
+extern "C" {
+    fn proxy_call_foreign_function(
+        function_name: *const u8,
+        function_name_size: usize,
+        arguments: *const u8,
+        arguments_size: usize,
+        results: *mut *mut u8,
+        results_size: *mut usize,
+    ) -> Status;
+}
 
-    pub(super) fn serialize_property_path(path: Vec<&str>) -> Bytes {
-        if path.is_empty() {
-            return Vec::new();
+pub fn call_foreign_function(function_name: &str, arguments: Option<&[u8]>) -> Result<Option<Bytes>, Status> {
+    let mut return_data: *mut u8 = null_mut();
+    let mut return_size: usize = 0;
+    unsafe {
+        match proxy_call_foreign_function(
+            function_name.as_ptr(),
+            function_name.len(),
+            arguments.map_or(null(), |arguments| arguments.as_ptr()),
+            arguments.map_or(0, |arguments| arguments.len()),
+            &mut return_data,
+            &mut return_size,
+        ) {
+            Status::Ok => {
+                if !return_data.is_null() {
+                    Ok(Some(Vec::from_raw_parts(
+                        return_data,
+                        return_size,
+                        return_size,
+                    )))
+                } else {
+                    Ok(None)
+                }
+            }
+            Status::NotFound => Ok(None),
+            status => panic!("unexpected status: {}", status as u32),
         }
-        let mut size: usize = 0;
-        for part in &path {
-            size += part.len() + 1;
-        }
-        let mut bytes: Bytes = Vec::with_capacity(size);
-        for part in &path {
-            bytes.extend_from_slice(&part.as_bytes());
-            bytes.push(0);
-        }
-        bytes.pop();
-        bytes
-    }
-
-    pub(super) fn serialize_map(map: Vec<(&str, &str)>) -> Bytes {
-        let mut size: usize = 4;
-        for (name, value) in &map {
-            size += name.len() + value.len() + 10;
-        }
-        let mut bytes: Bytes = Vec::with_capacity(size);
-        bytes.extend_from_slice(&map.len().to_le_bytes());
-        for (name, value) in &map {
-            bytes.extend_from_slice(&name.len().to_le_bytes());
-            bytes.extend_from_slice(&value.len().to_le_bytes());
-        }
-        for (name, value) in &map {
-            bytes.extend_from_slice(&name.as_bytes());
-            bytes.push(0);
-            bytes.extend_from_slice(&value.as_bytes());
-            bytes.push(0);
-        }
-        bytes
-    }
-
-    pub(super) fn deserialize_map(bytes: &[u8]) -> Vec<(String, String)> {
-        let mut map = Vec::new();
-        if bytes.is_empty() {
-            return map;
-        }
-        let size = u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[0..4]).unwrap()) as usize;
-        let mut p = 4 + size * 8;
-        for n in 0..size {
-            let s = 4 + n * 8;
-            let size = u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[s..s + 4]).unwrap()) as usize;
-            let key = bytes[p..p + size].to_vec();
-            p += size + 1;
-            let size =
-                u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[s + 4..s + 8]).unwrap()) as usize;
-            let value = bytes[p..p + size].to_vec();
-            p += size + 1;
-            map.push((
-                String::from_utf8(key).unwrap(),
-                String::from_utf8(value).unwrap(),
-            ));
-        }
-        map
     }
 }
+
+    mod utils {
+        use crate::types::Bytes;
+        use std::convert::TryFrom;
+
+        pub(super) fn serialize_property_path(path: Vec<&str>) -> Bytes {
+            if path.is_empty() {
+                return Vec::new();
+            }
+            let mut size: usize = 0;
+            for part in &path {
+                size += part.len() + 1;
+            }
+            let mut bytes: Bytes = Vec::with_capacity(size);
+            for part in &path {
+                bytes.extend_from_slice(&part.as_bytes());
+                bytes.push(0);
+            }
+            bytes.pop();
+            bytes
+        }
+
+        pub(super) fn serialize_map(map: Vec<(&str, &str)>) -> Bytes {
+            let mut size: usize = 4;
+            for (name, value) in &map {
+                size += name.len() + value.len() + 10;
+            }
+            let mut bytes: Bytes = Vec::with_capacity(size);
+            bytes.extend_from_slice(&map.len().to_le_bytes());
+            for (name, value) in &map {
+                bytes.extend_from_slice(&name.len().to_le_bytes());
+                bytes.extend_from_slice(&value.len().to_le_bytes());
+            }
+            for (name, value) in &map {
+                bytes.extend_from_slice(&name.as_bytes());
+                bytes.push(0);
+                bytes.extend_from_slice(&value.as_bytes());
+                bytes.push(0);
+            }
+            bytes
+        }
+
+        pub(super) fn deserialize_map(bytes: &[u8]) -> Vec<(String, String)> {
+            let mut map = Vec::new();
+            if bytes.is_empty() {
+                return map;
+            }
+            let size = u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[0..4]).unwrap()) as usize;
+            let mut p = 4 + size * 8;
+            for n in 0..size {
+                let s = 4 + n * 8;
+                let size = u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[s..s + 4]).unwrap()) as usize;
+                let key = bytes[p..p + size].to_vec();
+                p += size + 1;
+                let size =
+                    u32::from_le_bytes(<[u8; 4]>::try_from(&bytes[s + 4..s + 8]).unwrap()) as usize;
+                let value = bytes[p..p + size].to_vec();
+                p += size + 1;
+                map.push((
+                    String::from_utf8(key).unwrap(),
+                    String::from_utf8(value).unwrap(),
+                ));
+            }
+            map
+        }
+    }

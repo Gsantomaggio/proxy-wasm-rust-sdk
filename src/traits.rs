@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::{Duration, SystemTime};
+
 use crate::hostcalls;
 use crate::types::*;
-use std::time::{Duration, SystemTime};
 
 pub trait Context {
     fn get_current_time(&self) -> SystemTime {
         hostcalls::get_current_time().unwrap()
+    }
+
+    fn call_foreign_function(&self, function_name: &str, arguments: Option<&[u8]>) -> Option<Bytes> {
+        hostcalls::call_foreign_function(function_name, arguments).unwrap()
     }
 
     fn get_property(&self, path: Vec<&str>) -> Option<Bytes> {
@@ -75,8 +80,7 @@ pub trait Context {
         _num_headers: usize,
         _body_size: usize,
         _num_trailers: usize,
-    ) {
-    }
+    ) {}
 
     fn get_http_call_response_headers(&self) -> Vec<(String, String)> {
         hostcalls::get_map(MapType::HttpCallResponseHeaders).unwrap()
